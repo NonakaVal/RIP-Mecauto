@@ -72,6 +72,7 @@ pub enum Form {
     NovoMovCaixa,
     MovCaixaEdit(usize),
     SaidaProduto(usize),
+    EntradaProduto(usize),
     NovoProfissional,
     Profissional(usize),
     NovoFornecedor,
@@ -680,6 +681,7 @@ pub enum FormDraft {
     EventoFinanceiro(crate::data::EventoFin),
     Usuario(crate::data::Usuario),
     SaidaEstoque(StockExitDraft),
+    EntradaEstoque(StockExitDraft),
 }
 
 #[derive(Clone, Debug)]

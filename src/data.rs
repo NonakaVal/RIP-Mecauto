@@ -235,6 +235,41 @@ fn item(descricao: &str, unidade: &str, qtd: f64, valor: f32) -> Item {
 }
 
 impl MecAutoData {
+    pub fn registrar_entrada_estoque(
+        &mut self,
+        produto_index: usize,
+        quantidade: f64,
+        observacao: String,
+        data: String,
+    ) -> Result<(), &'static str> {
+        if !quantidade.is_finite() || quantidade <= 0.0 {
+            return Err("Informe uma quantidade maior que zero.");
+        }
+        let produto = self
+            .produtos
+            .get(produto_index)
+            .ok_or("O produto selecionado não existe mais.")?;
+        let next_id = self
+            .movimentos_estoque
+            .iter()
+            .filter_map(|movimento| movimento.id.strip_prefix("ME-").and_then(|s| s.parse::<u64>().ok()))
+            .max()
+            .unwrap_or(0) + 1;
+        let movement = MovEstoque {
+            id: format!("ME-{next_id:03}"),
+            produto_id: produto.id.clone(),
+            produto_codigo: produto.codigo.clone(),
+            produto_descricao: produto.descricao.clone(),
+            data,
+            tipo: "Entrada".into(),
+            quantidade,
+            observacao: observacao.trim().to_owned(),
+        };
+        self.produtos[produto_index].estoque += quantidade;
+        self.movimentos_estoque.push(movement);
+        Ok(())
+    }
+
     pub fn registrar_saida_estoque(
         &mut self,
         produto_index: usize,

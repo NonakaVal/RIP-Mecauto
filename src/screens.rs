@@ -177,6 +177,15 @@ fn card(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
     });
 }
 
+fn section_caption(ui: &mut Ui, title: &str, description: &str) {
+    ui.label(RichText::new(title).size(15.0).strong());
+    ui.label(
+        RichText::new(description)
+            .size(11.0)
+            .color(Color32::from_rgb(103, 116, 132)),
+    );
+}
+
 fn text(ui: &mut Ui, s: &mut String, label: &str) {
     ui.horizontal(|ui| {
         ui.label(RichText::new(label).strong());
@@ -857,6 +866,13 @@ fn produtos(app: &mut App, ui: &mut Ui) {
         }
         app.form = None;
     }
+    if let Some(Form::EntradaProduto(index)) = app.form {
+        if index < app.data.produtos.len() {
+            entrada_produto_form(app, ui, index);
+            return;
+        }
+        app.form = None;
+    }
     if let Some(Form::NovoProduto) = app.form {
         produto_form(app, ui, None);
         produto_catalogo_compacto(app, ui);
@@ -882,7 +898,7 @@ fn produtos(app: &mut App, ui: &mut Ui) {
             );
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button("＋  Novo produto").clicked() {
+            if ui.button("＋  Cadastrar produto").clicked() {
                 app.form = Some(Form::NovoProduto);
                 app.product_draft = None;
                 app.prod_tab = 0;
@@ -937,12 +953,7 @@ fn produtos(app: &mut App, ui: &mut Ui) {
     card(ui, |ui| {
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
-                ui.label(RichText::new("Catálogo").size(16.0).strong());
-                ui.label(
-                    RichText::new("Pesquise, consulte o saldo ou registre uma saída.")
-                        .size(11.0)
-                        .color(Color32::from_rgb(107, 114, 128)),
-                );
+                section_caption(ui, "Buscar produtos", "Selecione uma linha para ver as ações disponíveis para o produto.");
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(
@@ -966,25 +977,20 @@ fn produtos(app: &mut App, ui: &mut Ui) {
                 response.request_focus();
                 app.search_focus = false;
             }
+            if !app.search.is_empty() && ui.small_button("Limpar").clicked() {
+                app.search.clear();
+            }
         });
         ui.add_space(12.0);
         ScrollArea::vertical().show(ui, |ui| {
-            egui::Grid::new("grid_produtos")
-                .striped(true)
-                .min_col_width(48.0)
-                .show(ui, |ui| {
-                    headers(
-                        ui,
-                        &[
-                            "Código",
-                            "Descrição",
-                            "Unidade",
-                            "Grupo",
-                            "Estoque",
-                            "Preço",
-                            "Ações",
-                        ],
-                    );
+            ui.horizontal(|ui| {
+                ui.add_sized(egui::vec2(76.0, 28.0), egui::Label::new(RichText::new("Código").strong().color(accent())));
+                ui.add_sized(egui::vec2(240.0, 28.0), egui::Label::new(RichText::new("Descrição").strong().color(accent())));
+                ui.add_sized(egui::vec2(82.0, 28.0), egui::Label::new(RichText::new("Unidade").strong().color(accent())));
+                ui.add_sized(egui::vec2(120.0, 28.0), egui::Label::new(RichText::new("Grupo").strong().color(accent())));
+                ui.add_sized(egui::vec2(92.0, 28.0), egui::Label::new(RichText::new("Estoque").strong().color(accent())));
+                ui.add_sized(egui::vec2(110.0, 28.0), egui::Label::new(RichText::new("Preço").strong().color(accent())));
+            });
                     for (i, p) in produtos.iter().enumerate() {
                         let haystack = format!(
                             "{} {} {} {}",
@@ -993,40 +999,50 @@ fn produtos(app: &mut App, ui: &mut Ui) {
                         if !busca.is_empty() && !haystack.to_lowercase().contains(&busca) {
                             continue;
                         }
-                        ui.label(RichText::new(&p.codigo).monospace());
-                        ui.label(&p.descricao);
-                        ui.label(&p.unidade);
-                        ui.label(&p.grupo);
-                        ui.colored_label(
-                            if p.estoque <= p.estoque_minimo {
-                                Color32::from_rgb(0xff, 0x9f, 0x43)
-                            } else {
-                                Color32::from_rgb(32, 36, 43)
-                            },
-                            f2s(p.estoque),
+                        let row_height = 42.0;
+                        let (row_rect, hover_response) = ui.allocate_exact_size(
+                            egui::vec2(ui.available_width(), row_height),
+                            egui::Sense::hover(),
                         );
-                        ui.label(format!("R$ {}", f2s(p.preco)));
-                        ui.horizontal(|ui| {
-                            if ui.small_button("Abrir").clicked() {
-                                abrir_produto(app, i);
-                            }
-                            if ui
-                                .add_enabled(p.estoque > 0.0, egui::Button::new("Dar saída"))
-                                .clicked()
-                            {
-                                app.form = Some(Form::SaidaProduto(i));
-                                app.stock_exit_error = None;
-                            }
-                        });
-                        ui.end_row();
+                        let fill = if hover_response.hovered() {
+                            Color32::from_rgb(247, 250, 255)
+                        } else if i % 2 == 1 {
+                            Color32::from_rgb(249, 250, 252)
+                        } else {
+                            Color32::WHITE
+                        };
+                        ui.painter().rect_filled(row_rect, 6.0, fill);
+                        let mut row = ui.new_child(
+                            egui::UiBuilder::new().max_rect(row_rect).layout(egui::Layout::left_to_right(egui::Align::Center)),
+                        );
+                        row.spacing_mut().item_spacing.x = 8.0;
+                        row.add_sized(egui::vec2(76.0, row_height), egui::Label::new(RichText::new(&p.codigo).monospace()));
+                        row.add_sized(egui::vec2(240.0, row_height), egui::Label::new(RichText::new(&p.descricao).strong()));
+                        row.add_sized(egui::vec2(82.0, row_height), egui::Label::new(&p.unidade));
+                        row.add_sized(egui::vec2(120.0, row_height), egui::Label::new(&p.grupo));
+                        row.add_sized(egui::vec2(92.0, row_height), egui::Label::new(RichText::new(f2s(p.estoque)).color(
+                            if p.estoque <= p.estoque_minimo { Color32::from_rgb(0xff, 0x9f, 0x43) } else { Color32::from_rgb(32, 36, 43) }
+                        )));
+                        row.add_sized(egui::vec2(110.0, row_height), egui::Label::new(format!("R$ {}", f2s(p.preco))));
+                        let row_response = ui.interact(
+                            row_rect,
+                            ui.make_persistent_id(("produto_linha_principal", i)),
+                            egui::Sense::click(),
+                        );
+                        if row_response.clicked() {
+                            abrir_produto(app, i);
+                        }
                     }
-                    if quantidade_encontrada == 0 {
-                        ui.label("Nenhum produto encontrado. Ajuste a busca ou cadastre um item.");
-                        ui.end_row();
-                    }
+            if quantidade_encontrada == 0 {
+                ui.add_space(10.0);
+                ui.vertical_centered(|ui| {
+                    ui.label(RichText::new("Nenhum produto encontrado").strong());
+                    ui.label(RichText::new("Tente outro termo ou cadastre um novo item.").color(Color32::from_rgb(103, 116, 132)));
                 });
+            }
         });
     });
+
 }
 
 fn saida_produto_form(app: &mut App, ui: &mut Ui, index: usize) {
@@ -1063,7 +1079,7 @@ fn saida_produto_form(app: &mut App, ui: &mut Ui, index: usize) {
     });
     ui.add_space(12.0);
     card(ui, |ui| {
-        ui.label(RichText::new("Produto selecionado").size(15.0).strong());
+            ui.label(RichText::new("Produto selecionado").size(15.0).strong());
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
@@ -1153,6 +1169,73 @@ fn saida_produto_form(app: &mut App, ui: &mut Ui, index: usize) {
     }
 }
 
+fn entrada_produto_form(app: &mut App, ui: &mut Ui, index: usize) {
+    let form = Form::EntradaProduto(index);
+    let produto = &app.data.produtos[index];
+    let nome = produto.descricao.clone();
+    let codigo = produto.codigo.clone();
+    let unidade = produto.unidade.clone();
+    let estoque = produto.estoque;
+    let initial = StockExitDraft { quantidade: 1.0, observacao: String::new() };
+    let mut draft = match app.take_form_draft(form, FormDraft::EntradaEstoque(initial)) {
+        FormDraft::EntradaEstoque(draft) => draft,
+        _ => unreachable!(),
+    };
+    ui.horizontal(|ui| {
+        ui.vertical(|ui| {
+            ui.heading("Registrar entrada de estoque");
+            ui.label(RichText::new("Registre a quantidade recebida para atualizar o saldo do produto.").color(Color32::from_rgb(107, 114, 128)));
+        });
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.button("← Voltar ao catálogo").clicked() {
+                app.form = None;
+                app.form_drafts.remove(&form);
+            }
+        });
+    });
+    ui.add_space(12.0);
+    card(ui, |ui| {
+        ui.label(RichText::new("Produto selecionado").size(15.0).strong());
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                ui.label(RichText::new(&nome).size(18.0).strong());
+                ui.label(RichText::new(format!("Código {codigo} · Unidade {unidade}")).color(Color32::from_rgb(107, 114, 128)));
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.vertical(|ui| {
+                    ui.label(RichText::new("SALDO ATUAL").size(10.0).strong().color(Color32::from_rgb(107, 114, 128)));
+                    ui.label(RichText::new(f2s(estoque)).size(22.0).strong());
+                });
+            });
+        });
+        ui.add_space(14.0);
+        ui.columns(2, |columns| {
+            columns[0].vertical(|ui| {
+                ui.label(RichText::new("Quantidade de entrada").strong());
+                ui.add(egui::DragValue::new(&mut draft.quantidade).range(0.0..=1_000_000.0).speed(0.25).max_decimals(3));
+            });
+            columns[1].vertical(|ui| {
+                ui.label(RichText::new("Observação (opcional)").strong());
+                ui.add(egui::TextEdit::singleline(&mut draft.observacao).desired_width(ui.available_width()).hint_text("Ex.: NF de compra ou fornecedor"));
+            });
+        });
+        let valida = draft.quantidade.is_finite() && draft.quantidade > 0.0;
+        if !valida { ui.colored_label(Color32::from_rgb(180, 35, 24), "Informe uma quantidade maior que zero."); }
+        if let Some(error) = &app.stock_exit_error { ui.colored_label(Color32::from_rgb(180, 35, 24), error); }
+        ui.add_space(12.0);
+        ui.horizontal(|ui| {
+            if ui.add_enabled(valida, egui::Button::new(RichText::new("Registrar entrada").strong()).fill(accent()).min_size(egui::vec2(150.0, 38.0))).clicked() {
+                match app.data.registrar_entrada_estoque(index, draft.quantidade, draft.observacao.clone(), today()) {
+                    Ok(()) => { app.form = None; app.form_drafts.remove(&form); app.stock_exit_error = None; }
+                    Err(error) => app.stock_exit_error = Some(error.into()),
+                }
+            }
+            if ui.button("Cancelar").clicked() { app.form = None; app.form_drafts.remove(&form); app.stock_exit_error = None; }
+        });
+    });
+    if app.form == Some(form) { app.keep_form_draft(form, FormDraft::EntradaEstoque(draft)); }
+}
+
 fn abrir_produto(app: &mut App, index: usize) {
     if let Some(current_form) = app.form {
         if matches!(current_form, Form::NovoProduto | Form::Produto(_)) {
@@ -1210,33 +1293,40 @@ fn produto_catalogo_compacto(app: &mut App, ui: &mut Ui) {
         .id_salt("produto_form_catalogo")
         .max_height(ui.available_height().max(80.0))
         .show(ui, |ui| {
-            egui::Grid::new("grid_produtos_form")
-                .striped(true)
-                .min_col_width(70.0)
-                .show(ui, |ui| {
-                    headers(
-                        ui,
-                        &["Código", "Descrição", "Unidade", "Estoque", "Preço", ""],
-                    );
-                    for (index, p) in &resultados {
-                        ui.label(RichText::new(&p.codigo).monospace());
-                        ui.label(&p.descricao);
-                        ui.label(&p.unidade);
-                        ui.label(f2s(p.estoque));
-                        ui.label(format!("R$ {}", f2s(p.preco)));
-                        if ui.small_button("Abrir").clicked() {
-                            selected_product = Some(*index);
-                        }
-                        ui.end_row();
-                    }
-                    if resultados.is_empty() {
-                        ui.label(
-                            RichText::new("Nenhum produto encontrado")
-                                .color(Color32::from_rgb(83, 98, 115)),
-                        );
-                        ui.end_row();
-                    }
-                });
+            for (index, p) in &resultados {
+                let label = format!("{}   {}   ·   {}   ·   estoque {}   ·   R$ {}", p.codigo, p.descricao, p.unidade, f2s(p.estoque), f2s(p.preco));
+                let (rect, hover_response) = ui.allocate_exact_size(
+                    egui::vec2(ui.available_width(), 36.0),
+                    egui::Sense::hover(),
+                );
+                ui.painter().rect_filled(
+                    rect,
+                    5.0,
+                    if hover_response.hovered() {
+                        Color32::from_rgb(235, 242, 255)
+                    } else {
+                        Color32::from_rgb(249, 250, 252)
+                    },
+                );
+                let mut row = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(rect)
+                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                );
+                row.add_space(10.0);
+                row.add(egui::Label::new(RichText::new(label).size(12.0)));
+                let response = ui.interact(
+                    rect,
+                    ui.make_persistent_id(("produto_linha_preview", *index)),
+                    egui::Sense::click(),
+                );
+                if response.clicked() {
+                    selected_product = Some(*index);
+                }
+            }
+            if resultados.is_empty() {
+                ui.label(RichText::new("Nenhum produto encontrado").color(Color32::from_rgb(83, 98, 115)));
+            }
         });
     if let Some(index) = selected_product {
         abrir_produto(app, index);
@@ -1268,13 +1358,13 @@ fn produto_form(app: &mut App, ui: &mut Ui, i: Option<usize>) {
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.heading(if i.is_some() {
-                    "Cadastro de produto"
+                    "Editar produto"
                 } else {
-                    "Novo produto"
+                    "Cadastrar produto"
                 });
                 ui.label(
                     RichText::new(
-                        "Preencha os dados do item e organize as informações por categoria.",
+                        "Mantenha a identificação, o estoque e os dados comerciais em um só lugar.",
                     )
                     .color(Color32::from_rgb(103, 116, 132)),
                 );
@@ -1282,6 +1372,17 @@ fn produto_form(app: &mut App, ui: &mut Ui, i: Option<usize>) {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("← Voltar ao catálogo").clicked() {
                     cancel = true;
+                }
+                if let Some(index) = i {
+                    if ui.button("↑ Entrada").clicked() {
+                        app.form = Some(Form::EntradaProduto(index));
+                        app.stock_exit_error = None;
+                    }
+                    let tem_saldo = app.data.produtos.get(index).is_some_and(|produto| produto.estoque > 0.0);
+                    if ui.add_enabled(tem_saldo, egui::Button::new("↓ Saída")).clicked() {
+                        app.form = Some(Form::SaidaProduto(index));
+                        app.stock_exit_error = None;
+                    }
                 }
                 if let Some(index) = i {
                     if ui.button("Excluir produto").clicked() {
@@ -1292,6 +1393,8 @@ fn produto_form(app: &mut App, ui: &mut Ui, i: Option<usize>) {
         });
 
         ui.add_space(12.0);
+        ui.label(RichText::new("Informações do cadastro").strong().color(Color32::from_rgb(54, 65, 81)));
+        ui.add_space(4.0);
         abas(
             ui,
             &[
@@ -1364,9 +1467,9 @@ fn produto_form(app: &mut App, ui: &mut Ui, i: Option<usize>) {
             save = ui
                 .add_enabled(
                     nome_valido,
-                    egui::Button::new(RichText::new("✓  Salvar produto").strong().color(save_text))
+                    egui::Button::new(RichText::new("✓  Salvar alterações").strong().color(save_text))
                         .fill(save_fill)
-                        .min_size(egui::vec2(150.0, 34.0)),
+                        .min_size(egui::vec2(160.0, 38.0)),
                 )
                 .clicked();
             if ui.button("Cancelar").clicked() {
