@@ -221,6 +221,11 @@ fn item(descricao: &str, unidade: &str, qtd: f64, valor: f32) -> Item {
 }
 
 impl MecAutoData {
+    pub fn legacy_products() -> Vec<Produto> {
+        serde_json::from_str(include_str!("products_legacy.json"))
+            .expect("catálogo legado de produtos deve ser JSON válido")
+    }
+
     pub fn seed() -> Self {
         let mut d = MecAutoData::default();
 
@@ -399,6 +404,7 @@ impl MecAutoData {
                 ..Default::default()
             },
         ];
+        d.produtos.extend(Self::legacy_products());
 
         d.vendas = vec![Venda {
             id: "V-001".into(),
