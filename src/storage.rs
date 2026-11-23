@@ -79,7 +79,19 @@ impl Storage {
             .optional()?;
 
         let data = if initialized == Some(1) {
-            load_data(&storage.connection)?
+            let mut data = load_data(&storage.connection)?;
+            let imported = MecAutoData::legacy_products();
+            let mut changed = false;
+            for product in imported {
+                if !data.produtos.iter().any(|existing| existing.id == product.id) {
+                    data.produtos.push(product);
+                    changed = true;
+                }
+            }
+            if changed {
+                storage.save(&data)?;
+            }
+            data
         } else {
             let data = MecAutoData::seed();
             storage.save(&data)?;

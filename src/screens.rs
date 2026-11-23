@@ -782,7 +782,6 @@ fn produtos(app: &mut App, ui: &mut Ui) {
                             "Grupo",
                             "Estoque",
                             "Preço",
-                            "",
                         ],
                     );
                     for (i, p) in produtos.iter().enumerate() {
@@ -793,13 +792,15 @@ fn produtos(app: &mut App, ui: &mut Ui) {
                         if !busca.is_empty() && !haystack.to_lowercase().contains(&busca) {
                             continue;
                         }
-                        ui.label(RichText::new(&p.codigo).monospace());
-                        ui.label(&p.descricao);
-                        ui.label(&p.unidade);
-                        ui.label(&p.grupo);
-                        ui.label(f2s(p.estoque));
-                        ui.label(format!("R$ {}", f2s(p.preco)));
-                        if ui.small_button("Abrir").clicked() {
+                        let selected = matches!(app.form, Some(Form::Produto(selected)) if selected == i);
+                        let mut clicked = false;
+                        clicked |= ui.selectable_label(selected, RichText::new(&p.codigo).monospace()).clicked();
+                        clicked |= ui.selectable_label(selected, &p.descricao).clicked();
+                        clicked |= ui.selectable_label(selected, &p.unidade).clicked();
+                        clicked |= ui.selectable_label(selected, &p.grupo).clicked();
+                        clicked |= ui.selectable_label(selected, f2s(p.estoque)).clicked();
+                        clicked |= ui.selectable_label(selected, format!("R$ {}", f2s(p.preco))).clicked();
+                        if clicked {
                             abrir_produto(app, i);
                         }
                         ui.end_row();
@@ -870,17 +871,16 @@ fn produto_catalogo_compacto(app: &mut App, ui: &mut Ui) {
                 .striped(true)
                 .min_col_width(70.0)
                 .show(ui, |ui| {
-                    headers(
-                        ui,
-                        &["Código", "Descrição", "Unidade", "Estoque", "Preço", ""],
-                    );
+                    headers(ui, &["Código", "Descrição", "Unidade", "Estoque", "Preço"]);
                     for (index, p) in &resultados {
-                        ui.label(RichText::new(&p.codigo).monospace());
-                        ui.label(&p.descricao);
-                        ui.label(&p.unidade);
-                        ui.label(f2s(p.estoque));
-                        ui.label(format!("R$ {}", f2s(p.preco)));
-                        if ui.small_button("Abrir").clicked() {
+                        let selected = matches!(app.form, Some(Form::Produto(selected)) if selected == *index);
+                        let mut clicked = false;
+                        clicked |= ui.selectable_label(selected, RichText::new(&p.codigo).monospace()).clicked();
+                        clicked |= ui.selectable_label(selected, &p.descricao).clicked();
+                        clicked |= ui.selectable_label(selected, &p.unidade).clicked();
+                        clicked |= ui.selectable_label(selected, f2s(p.estoque)).clicked();
+                        clicked |= ui.selectable_label(selected, format!("R$ {}", f2s(p.preco))).clicked();
+                        if clicked {
                             selected_product = Some(*index);
                         }
                         ui.end_row();
