@@ -15,6 +15,7 @@ pub type StorageResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 const SCHEMA_VERSION: i64 = 1;
 const PORTABLE_FORMAT: &str = "mecauto-portable-data";
 const PORTABLE_VERSION: u32 = 1;
+const DEMO_PRODUCTS_MIGRATION_KEY: &str = "demo_products_removed_v1";
 const MAX_ZIP_ENTRIES: usize = 1024;
 const MAX_ZIP_ENTRY_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_ZIP_TOTAL_BYTES: u64 = 128 * 1024 * 1024;
@@ -79,7 +80,23 @@ impl Storage {
             .optional()?;
 
         let data = if initialized == Some(1) {
-            load_data(&storage.connection)?
+            let mut data = load_data(&storage.connection)?;
+            let demo_products_removed: Option<String> = storage
+                .connection
+                .query_row(
+                    "SELECT value FROM settings WHERE key = ?1",
+                    [DEMO_PRODUCTS_MIGRATION_KEY],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            if demo_products_removed.as_deref() != Some("1") {
+                data.produtos
+                    .retain(|product| !is_demo_seed_product_id(&product.id));
+                data.movimentos_estoque
+                    .retain(|movement| !is_demo_seed_product_id(&movement.produto_id));
+                storage.save(&data)?;
+            }
+            data
         } else {
             let data = MecAutoData::seed();
             storage.save(&data)?;
@@ -163,6 +180,10 @@ impl Storage {
         transaction.execute(
             "INSERT INTO settings (key, value) VALUES ('initialized', '1')",
             [],
+        )?;
+        transaction.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, '1')",
+            [DEMO_PRODUCTS_MIGRATION_KEY],
         )?;
         transaction.commit()?;
         Ok(())
@@ -447,6 +468,10 @@ fn invalid_data(message: impl Into<String>) -> Box<dyn Error + Send + Sync> {
     ))
 }
 
+fn is_demo_seed_product_id(id: &str) -> bool {
+    matches!(id, "P-001" | "P-002" | "P-003" | "P-004" | "P-005")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -462,6 +487,16 @@ mod tests {
         ))
     }
 
+    fn test_product(id: &str) -> Produto {
+        Produto {
+            id: id.into(),
+            codigo: id.into(),
+            descricao: "Produto de teste".into(),
+            estoque: 5.0,
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn records_survive_reopen_and_backup_restore() {
         let directory = test_directory();
@@ -470,7 +505,8 @@ mod tests {
         let backup = directory.join("backup.zip");
         let modified_data;
         {
-            let (storage, data) = Storage::open_at(database.clone()).unwrap();
+            let (storage, mut data) = Storage::open_at(database.clone()).unwrap();
+            data.produtos.push(test_product("TEST-001"));
             storage.export_zip(&data, &backup).unwrap();
             assert_eq!(Storage::read_zip(&backup).unwrap(), data);
             modified_data = data;
@@ -494,7 +530,7 @@ mod tests {
         }
         {
             let (_, reopened) = Storage::open_at(database).unwrap();
-            assert_eq!(reopened, MecAutoData::seed());
+            assert_eq!(reopened, modified_data);
         }
         fs::remove_dir_all(directory).unwrap();
     }
@@ -506,6 +542,7 @@ mod tests {
         let database = directory.join("mecauto.sqlite3");
         let backup = directory.join("backup.zip");
         let (mut storage, mut data) = Storage::open_at(database.clone()).unwrap();
+        data.produtos.push(test_product("TEST-001"));
 
         data.registrar_saida_estoque(0, 1.5, "Uso em serviço".into(), "2026-11-23".into())
             .unwrap();
@@ -515,6 +552,49 @@ mod tests {
         let (_, reopened) = Storage::open_at(database).unwrap();
         assert_eq!(reopened, data);
         assert_eq!(Storage::read_zip(&backup).unwrap(), data);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn removes_only_demo_products_once_from_existing_database() {
+        let directory = test_directory();
+        fs::create_dir_all(&directory).unwrap();
+        let database = directory.join("mecauto.sqlite3");
+        {
+            let (mut storage, mut data) = Storage::open_at(database.clone()).unwrap();
+            data.produtos = vec![test_product("P-001"), test_product("CUSTOM-001")];
+            data.movimentos_estoque.push(MovEstoque {
+                id: "ME-001".into(),
+                produto_id: "P-001".into(),
+                ..Default::default()
+            });
+            storage.save(&data).unwrap();
+            storage
+                .connection
+                .execute(
+                    "DELETE FROM settings WHERE key = ?1",
+                    [DEMO_PRODUCTS_MIGRATION_KEY],
+                )
+                .unwrap();
+        }
+
+        let (mut storage, data) = Storage::open_at(database.clone()).unwrap();
+        assert_eq!(
+            data.produtos
+                .iter()
+                .map(|product| product.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["CUSTOM-001"]
+        );
+        assert!(data.movimentos_estoque.is_empty());
+        storage
+            .save(&MecAutoData {
+                produtos: vec![test_product("P-001"), test_product("CUSTOM-001")],
+                ..data.clone()
+            })
+            .unwrap();
+        let (_, reopened) = Storage::open_at(database).unwrap();
+        assert_eq!(reopened.produtos.len(), 2);
         fs::remove_dir_all(directory).unwrap();
     }
 

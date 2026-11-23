@@ -72,3 +72,6 @@ para ações principais. Em **Produtos**, pesquise por descrição, código, fab
 ou código de barras e use **Dar saída** no item para registrar a quantidade e uma
 observação opcional. O estoque é atualizado e a movimentação fica disponível no
 dashboard; registros são preservados no banco SQLite e nos backups portáteis.
+Novas instalações começam sem produtos de demonstração; ao atualizar bancos
+existentes, apenas os cinco produtos de exemplo e suas movimentações de estoque
+são removidos uma única vez. Cadastros de produtos próprios são preservados.

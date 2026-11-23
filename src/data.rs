@@ -342,123 +342,7 @@ impl MecAutoData {
             },
         ];
 
-        d.produtos = vec![
-            Produto {
-                id: "P-001".into(),
-                codigo: "001".into(),
-                descricao: "Óleo de Motor 5W40, 20 L".into(),
-                unidade: "Litro".into(),
-                grupo: "Óleos".into(),
-                subgrupo: "Motor".into(),
-                fabricante: "Shell".into(),
-                fornecedor: "Distribuidora Meca".into(),
-                local: "Depósito A".into(),
-                embalagem: "20 L".into(),
-                custo: 118.00,
-                preco: 185.00,
-                margem: 45.0,
-                icms: 18.0,
-                ipi: 0.0,
-                st: false,
-                cfop: "5.949".into(),
-                estoque: 12.0,
-                inativo: false,
-                foto: false,
-                ..Default::default()
-            },
-            Produto {
-                id: "P-002".into(),
-                codigo: "002".into(),
-                descricao: "Filtro de Ar 1F20".into(),
-                unidade: "Un".into(),
-                grupo: "Filtros".into(),
-                subgrupo: "Cabine".into(),
-                fabricante: "Mahle".into(),
-                fornecedor: "Distribuidora Meca".into(),
-                local: "Depósito A".into(),
-                embalagem: "Cx. 2".into(),
-                custo: 44.00,
-                preco: 89.00,
-                margem: 51.0,
-                icms: 18.0,
-                ipi: 0.0,
-                st: false,
-                cfop: "5.949".into(),
-                estoque: 8.0,
-                inativo: false,
-                foto: false,
-                ..Default::default()
-            },
-            Produto {
-                id: "P-003".into(),
-                codigo: "003".into(),
-                descricao: "Freio de Disco 11011430".into(),
-                unidade: "Un".into(),
-                grupo: "Freios".into(),
-                subgrupo: "Disco".into(),
-                fabricante: "Graynl".into(),
-                fornecedor: "Distribuidora Meca".into(),
-                local: "Depósito B".into(),
-                embalagem: "Unitário".into(),
-                custo: 76.00,
-                preco: 141.00,
-                margem: 46.0,
-                icms: 18.0,
-                ipi: 5.0,
-                st: false,
-                cfop: "5.949".into(),
-                estoque: 3.0,
-                inativo: false,
-                foto: false,
-                ..Default::default()
-            },
-            Produto {
-                id: "P-004".into(),
-                codigo: "004".into(),
-                descricao: "Pastilha de Freio P 01.012.064".into(),
-                unidade: "Conjunto".into(),
-                grupo: "Freios".into(),
-                subgrupo: "Pastilha".into(),
-                fabricante: "Duralast".into(),
-                fornecedor: "Distribuidora Meca".into(),
-                local: "Depósito B".into(),
-                embalagem: "Unitário".into(),
-                custo: 52.00,
-                preco: 97.00,
-                margem: 46.0,
-                icms: 18.0,
-                ipi: 5.0,
-                st: false,
-                cfop: "5.949".into(),
-                estoque: 5.0,
-                inativo: false,
-                foto: false,
-                ..Default::default()
-            },
-            Produto {
-                id: "P-005".into(),
-                codigo: "005".into(),
-                descricao: "Correia de Distribuição 6PK1200".into(),
-                unidade: "Un".into(),
-                grupo: "Correias".into(),
-                subgrupo: "Distribuição".into(),
-                fabricante: "Continental".into(),
-                fornecedor: "Distribuidora Meca".into(),
-                local: "Depósito A".into(),
-                embalagem: "Unitário".into(),
-                custo: 30.00,
-                preco: 58.00,
-                margem: 48.0,
-                icms: 18.0,
-                ipi: 0.0,
-                st: false,
-                cfop: "5.949".into(),
-                estoque: 10.0,
-                inativo: false,
-                foto: false,
-                ..Default::default()
-            },
-        ];
+        d.produtos = Vec::new();
 
         d.vendas = vec![Venda {
             id: "V-001".into(),
@@ -626,8 +510,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stock_exit_rejects_invalid_quantities_without_changing_stock() {
+    fn seed_starts_without_demo_products() {
+        assert!(MecAutoData::seed().produtos.is_empty());
+    }
+
+    fn data_with_product() -> MecAutoData {
         let mut data = MecAutoData::seed();
+        data.produtos.push(Produto {
+            id: "TEST-001".into(),
+            codigo: "TEST-001".into(),
+            descricao: "Produto de teste".into(),
+            estoque: 5.0,
+            ..Default::default()
+        });
+        data
+    }
+
+    #[test]
+    fn stock_exit_rejects_invalid_quantities_without_changing_stock() {
+        let mut data = data_with_product();
         let original = data.clone();
 
         assert!(data
@@ -649,7 +550,7 @@ mod tests {
 
     #[test]
     fn stock_exit_decrements_quantity_and_records_auditable_movement() {
-        let mut data = MecAutoData::seed();
+        let mut data = data_with_product();
         let original_stock = data.produtos[0].estoque;
 
         data.registrar_saida_estoque(
