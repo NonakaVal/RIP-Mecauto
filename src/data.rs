@@ -252,9 +252,15 @@ impl MecAutoData {
         let next_id = self
             .movimentos_estoque
             .iter()
-            .filter_map(|movimento| movimento.id.strip_prefix("ME-").and_then(|s| s.parse::<u64>().ok()))
+            .filter_map(|movimento| {
+                movimento
+                    .id
+                    .strip_prefix("ME-")
+                    .and_then(|s| s.parse::<u64>().ok())
+            })
             .max()
-            .unwrap_or(0) + 1;
+            .unwrap_or(0)
+            + 1;
         let movement = MovEstoque {
             id: format!("ME-{next_id:03}"),
             produto_id: produto.id.clone(),

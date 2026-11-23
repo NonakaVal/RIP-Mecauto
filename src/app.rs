@@ -57,6 +57,22 @@ impl Section {
     }
 }
 
+fn section_icon(section: Section) -> &'static str {
+    match section {
+        Section::Clientes => "♙",
+        Section::Vendas => "▤",
+        Section::Oficina => "⚒",
+        Section::Caixa => "▣",
+        Section::Produtos => "▦",
+        Section::Profissionais => "♙",
+        Section::Fornecedores => "▥",
+        Section::Financeiro => "$",
+        Section::Administracao => "⚙",
+        Section::Fiscal => "▧",
+        Section::Favoritos => "☆",
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Form {
     NovoCliente,
@@ -221,6 +237,7 @@ impl App {
         self.restore_pending = false;
     }
 
+    #[allow(dead_code)]
     fn sidebar(&mut self, ui: &mut egui::Ui) {
         egui::Frame::new()
             .fill(Color32::WHITE)
@@ -417,42 +434,117 @@ impl App {
         };
 
         egui::Panel::top("mecauto_module_toolbar")
-            .exact_size(70.0)
+            .exact_size(126.0)
             .show(ui, |ui| {
                 egui::Frame::new()
-                    .fill(Color32::from_rgb(247, 249, 252))
-                    .stroke(egui::Stroke::new(1.0, Color32::from_rgb(225, 231, 239)))
-                    .inner_margin(egui::Margin::symmetric(10, 7))
+                    .fill(Color32::from_rgb(235, 240, 247))
+                    .stroke(egui::Stroke::new(1.0, Color32::from_rgb(197, 208, 222)))
+                    .inner_margin(egui::Margin::symmetric(14, 8))
                     .show(ui, |ui| {
                         egui::ScrollArea::horizontal()
-                            .id_salt("module_toolbar_scroll")
+                            .id_salt("module_categories_scroll")
                             .auto_shrink([false, true])
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
-                                    for (icon, label, action) in items {
+                                    let dashboard = egui::Button::new(
+                                        RichText::new("▦\nVisão geral").size(11.0),
+                                    )
+                                    .min_size(egui::vec2(104.0, 44.0))
+                                    .fill(if self.active.is_none() {
+                                        accent()
+                                    } else {
+                                        Color32::WHITE
+                                    })
+                                    .stroke(egui::Stroke::new(
+                                        1.0,
+                                        Color32::from_rgb(190, 202, 218),
+                                    ));
+                                    if ui.add(dashboard).clicked() {
+                                        self.active = None;
+                                        self.form = None;
+                                        self.clear_form_draft();
+                                    }
+                                    for section in Section::ALL {
+                                        let selected = self.active == Some(section);
                                         let button = egui::Button::new(
-                                            RichText::new(format!("{icon}\n{label}")).size(11.0),
+                                            RichText::new(format!(
+                                                "{}\n{}",
+                                                section_icon(section),
+                                                section.title()
+                                            ))
+                                            .size(11.0),
                                         )
-                                        .min_size(egui::vec2(88.0, 52.0))
-                                        .fill(Color32::WHITE);
-                                        let response = ui.add_enabled(
-                                            action.is_some(),
-                                            button.stroke(egui::Stroke::new(
-                                                1.0,
-                                                Color32::from_rgb(220, 227, 236),
-                                            )),
-                                        );
-                                        if response.clicked() {
-                                            if let Some(action) = action {
-                                                self.run_toolbar_action(*action);
-                                            }
-                                        }
-                                        if action.is_none() {
-                                            response
-                                                .on_hover_text("Disponível em uma próxima etapa");
+                                        .min_size(egui::vec2(104.0, 44.0))
+                                        .fill(if selected {
+                                            Color32::from_rgb(232, 240, 255)
+                                        } else {
+                                            Color32::WHITE
+                                        })
+                                        .stroke(egui::Stroke::new(
+                                            1.0,
+                                            if selected {
+                                                accent()
+                                            } else {
+                                                Color32::from_rgb(190, 202, 218)
+                                            },
+                                        ));
+                                        if ui.add(button).clicked() {
+                                            self.active = Some(section);
+                                            self.form = None;
+                                            self.clear_form_draft();
                                         }
                                     }
                                 });
+                            });
+                        ui.add_space(7.0);
+                        egui::Frame::new()
+                            .fill(Color32::from_rgb(249, 250, 252))
+                            .stroke(egui::Stroke::new(1.0, Color32::from_rgb(197, 208, 222)))
+                            .corner_radius(egui::CornerRadius::same(8))
+                            .inner_margin(egui::Margin::symmetric(8, 5))
+                            .show(ui, |ui| {
+                                egui::ScrollArea::horizontal()
+                                    .id_salt("module_actions_scroll")
+                                    .auto_shrink([false, true])
+                                    .show(ui, |ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.label(
+                                                RichText::new(
+                                                    self.active.map_or("Atalhos", |section| {
+                                                        section.title()
+                                                    }),
+                                                )
+                                                .size(11.0)
+                                                .strong()
+                                                .color(accent()),
+                                            );
+                                            for (icon, label, action) in items {
+                                                let response = ui.add_enabled(
+                                                    action.is_some(),
+                                                    egui::Button::new(
+                                                        RichText::new(format!("{icon}  {label}"))
+                                                            .size(11.0),
+                                                    )
+                                                    .min_size(egui::vec2(126.0, 30.0))
+                                                    .fill(Color32::from_rgb(255, 255, 255))
+                                                    .stroke(egui::Stroke::new(
+                                                        1.0,
+                                                        Color32::from_rgb(210, 219, 231),
+                                                    )),
+                                                );
+                                                if response.clicked() {
+                                                    if let Some(action) = action {
+                                                        self.run_toolbar_action(*action);
+                                                    }
+                                                }
+                                                if action.is_none() {
+                                                    response.on_hover_text(
+                                                        "Disponível em uma próxima etapa",
+                                                    );
+                                                }
+                                            }
+                                        });
+                                    });
                             });
                     });
             });
@@ -528,15 +620,15 @@ impl App {
     fn update(&mut self, ui: &mut egui::Ui) {
         if !self.themed {
             let mut visuals = egui::Visuals::light();
-            let canvas = Color32::from_rgb(244, 246, 250);
+            let canvas = Color32::from_rgb(238, 242, 247);
             let surface = Color32::WHITE;
-            let border = Color32::from_rgb(226, 231, 239);
+            let border = Color32::from_rgb(203, 213, 225);
             let text = Color32::from_rgb(32, 36, 43);
-            let muted = Color32::from_rgb(107, 114, 128);
-            let hover = Color32::from_rgb(235, 241, 255);
+            let muted = Color32::from_rgb(91, 103, 119);
+            let hover = Color32::from_rgb(229, 237, 251);
             visuals.panel_fill = canvas;
             visuals.window_fill = Color32::WHITE;
-            visuals.faint_bg_color = Color32::from_rgb(244, 246, 250);
+            visuals.faint_bg_color = Color32::from_rgb(232, 237, 244);
             visuals.extreme_bg_color = surface;
             visuals.selection.bg_fill = Color32::from_rgb(225, 235, 255);
             visuals.selection.stroke = egui::Stroke::new(1.0, accent());
@@ -545,7 +637,7 @@ impl App {
             visuals.widgets.noninteractive.fg_stroke.color = text;
             visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, border);
             visuals.widgets.inactive.bg_fill = surface;
-            visuals.widgets.inactive.weak_bg_fill = Color32::from_rgb(247, 249, 251);
+            visuals.widgets.inactive.weak_bg_fill = Color32::from_rgb(247, 249, 252);
             visuals.widgets.inactive.fg_stroke.color = text;
             visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, border);
             visuals.widgets.hovered.bg_fill = hover;
@@ -579,7 +671,8 @@ impl App {
             .exact_size(52.0)
             .show(ui, |ui| {
                 egui::Frame::new()
-                    .fill(Color32::WHITE)
+                    .fill(Color32::from_rgb(252, 253, 255))
+                    .stroke(egui::Stroke::new(1.0, Color32::from_rgb(203, 213, 225)))
                     .inner_margin(egui::Margin::symmetric(20, 10))
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
@@ -605,16 +698,14 @@ impl App {
             });
         self.module_toolbar(ui);
         self.status_bar(ui);
-        egui::Panel::left("mecauto_sidebar")
-            .exact_size(220.0)
-            .show(ui, |ui| self.sidebar(ui));
         egui::CentralPanel::default()
-            .frame(egui::Frame::new().fill(Color32::from_rgb(244, 246, 250)))
+            .frame(egui::Frame::new().fill(Color32::from_rgb(238, 242, 247)))
             .show(ui, |ui| {
                 egui::Frame::new()
-                    .fill(Color32::from_rgb(244, 246, 250))
+                    .fill(Color32::from_rgb(238, 242, 247))
                     .inner_margin(egui::Margin::same(18))
                     .show(ui, |ui| {
+                        ui.set_min_height(ui.available_height());
                         if let Some(error) = self.storage_error.clone() {
                             ui.horizontal(|ui| {
                                 ui.colored_label(
