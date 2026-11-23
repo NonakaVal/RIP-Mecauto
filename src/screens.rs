@@ -4,7 +4,7 @@
 //! tabela com os registros do módulo (Grid striped) e formulário para gravar
 //! um novo registro ou alterar o selecionado.
 
-use crate::app::{accent, f2s, App, Form, FormDraft, Section};
+use crate::app::{accent, f2s, App, Form, FormDraft, Section, StockExitDraft};
 use crate::data::*;
 use egui::{Color32, RichText, ScrollArea, Ui, Vec2};
 
@@ -27,16 +27,130 @@ pub fn show(app: &mut App, ui: &mut Ui) {
 
 // ---------------------------------------------------------------- principal
 
-/// Tela principal do original: título grande centralizado e bolha de ajuda.
-fn home(_app: &mut App, ui: &mut Ui) {
-    ui.add_space(248.0);
-    ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-        ui.label(RichText::new("MECAUTO").size(120.0).strong());
+/// Resumo operacional com a hierarquia de cartões do dashboard de referência.
+fn home(app: &mut App, ui: &mut Ui) {
+    ui.heading("Visão geral");
+    ui.label(
+        RichText::new("Acompanhe o estoque e a operação da sua oficina.")
+            .color(Color32::from_rgb(107, 114, 128)),
+    );
+    ui.add_space(16.0);
+
+    let products = &app.data.produtos;
+    let total_stock: f64 = products.iter().map(|product| product.estoque).sum();
+    let low_stock = products
+        .iter()
+        .filter(|product| !product.inativo && product.estoque <= product.estoque_minimo)
+        .count();
+    let stock_value: f64 = products
+        .iter()
+        .map(|product| product.estoque * f64::from(product.preco))
+        .sum();
+
+    ui.columns(4, |columns| {
+        metric_card(
+            &mut columns[0],
+            "Produtos cadastrados",
+            products.len().to_string(),
+            "Itens ativos e inativos",
+            Color32::from_rgb(0x47, 0x7d, 0xff),
+        );
+        metric_card(
+            &mut columns[1],
+            "Unidades em estoque",
+            f2s(total_stock),
+            "Saldo total disponível",
+            Color32::from_rgb(0x00, 0xb8, 0x96),
+        );
+        metric_card(
+            &mut columns[2],
+            "Estoque baixo",
+            low_stock.to_string(),
+            "Itens no mínimo ou abaixo",
+            Color32::from_rgb(0xff, 0x9f, 0x43),
+        );
+        metric_card(
+            &mut columns[3],
+            "Valor em estoque",
+            format!("R$ {}", f2s(stock_value)),
+            "Pelo preço de venda",
+            Color32::from_rgb(0x8b, 0x5c, 0xf6),
+        );
     });
-    ui.add_space(30.0);
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-        ui.add_space(103.0);
-        ui.label(RichText::new("Precisa de ajuda? Fale agora com um atendente").size(9.0));
+
+    ui.add_space(14.0);
+    card(ui, |ui| {
+        ui.label(RichText::new("Reposição necessária").size(16.0).strong());
+        ui.label(
+            RichText::new("Produtos no estoque mínimo ou abaixo.")
+                .color(Color32::from_rgb(107, 114, 128)),
+        );
+        ui.add_space(8.0);
+        egui::Grid::new("dashboard_low_stock")
+            .striped(true)
+            .show(ui, |ui| {
+                headers(ui, &["Produto", "Disponível", "Mínimo"]);
+                let mut found = false;
+                for product in products
+                    .iter()
+                    .filter(|product| !product.inativo && product.estoque <= product.estoque_minimo)
+                    .take(6)
+                {
+                    found = true;
+                    ui.label(&product.descricao);
+                    ui.colored_label(Color32::from_rgb(0xff, 0x9f, 0x43), f2s(product.estoque));
+                    ui.label(f2s(product.estoque_minimo));
+                    ui.end_row();
+                }
+                if !found {
+                    ui.label("Nenhum item precisa de reposição.");
+                    ui.end_row();
+                }
+            });
+    });
+    ui.add_space(12.0);
+    card(ui, |ui| {
+        ui.label(RichText::new("Movimentações recentes").size(16.0).strong());
+        ui.label(
+            RichText::new("Últimas saídas registradas no estoque.")
+                .color(Color32::from_rgb(107, 114, 128)),
+        );
+        ui.add_space(8.0);
+        egui::Grid::new("dashboard_stock_movements")
+            .striped(true)
+            .show(ui, |ui| {
+                headers(ui, &["Data", "Produto", "Tipo", "Quantidade"]);
+                let mut found = false;
+                for movement in app.data.movimentos_estoque.iter().rev().take(6) {
+                    found = true;
+                    ui.label(&movement.data);
+                    ui.label(&movement.produto_descricao);
+                    ui.colored_label(Color32::from_rgb(0x47, 0x7d, 0xff), &movement.tipo);
+                    ui.label(f2s(movement.quantidade));
+                    ui.end_row();
+                }
+                if !found {
+                    ui.label("Ainda não há movimentações de estoque.");
+                    ui.end_row();
+                }
+            });
+    });
+}
+
+fn metric_card(ui: &mut Ui, title: &str, value: String, detail: &str, color: Color32) {
+    card(ui, |ui| {
+        ui.set_min_height(102.0);
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                ui.label(
+                    RichText::new(title)
+                        .size(12.0)
+                        .color(Color32::from_rgb(107, 114, 128)),
+                );
+                ui.label(RichText::new(value).size(23.0).strong());
+            });
+        });
+        ui.label(RichText::new(detail).size(11.0).color(color));
     });
 }
 
@@ -45,6 +159,22 @@ fn home(_app: &mut App, ui: &mut Ui) {
 fn heading(ui: &mut Ui, texto: &str) {
     ui.heading(texto);
     ui.add_space(6.0);
+}
+
+fn card_frame() -> egui::Frame {
+    egui::Frame::new()
+        .fill(Color32::WHITE)
+        .stroke(egui::Stroke::new(1.0, Color32::from_rgb(226, 231, 239)))
+        .corner_radius(egui::CornerRadius::same(12))
+        .inner_margin(egui::Margin::same(16))
+}
+
+fn card(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
+    card_frame().show(ui, |ui| {
+        let width = ui.available_width();
+        ui.set_min_width(width);
+        contents(ui);
+    });
 }
 
 fn text(ui: &mut Ui, s: &mut String, label: &str) {
@@ -103,16 +233,21 @@ fn combo<S: ToString>(ui: &mut Ui, id: &str, label: &str, current: &mut String, 
 }
 
 fn abas(ui: &mut Ui, abas: &[&str], atual: &mut usize) {
-    ui.horizontal(|ui| {
-        for (i, a) in abas.iter().enumerate() {
-            if ui
-                .selectable_label(*atual == i, RichText::new(*a).strong().size(12.0))
-                .clicked()
-            {
-                *atual = i;
-            }
-        }
-    });
+    ScrollArea::horizontal()
+        .id_salt("produto_abas_scroll")
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                for (i, a) in abas.iter().enumerate() {
+                    if ui
+                        .selectable_label(*atual == i, RichText::new(*a).strong().size(12.0))
+                        .clicked()
+                    {
+                        *atual = i;
+                    }
+                }
+            });
+        });
     ui.add_space(4.0);
 }
 
@@ -715,6 +850,13 @@ fn mov_caixa_form(app: &mut App, ui: &mut Ui, i: Option<usize>) {
 // ---------------------------------------------------------------- produtos
 
 fn produtos(app: &mut App, ui: &mut Ui) {
+    if let Some(Form::SaidaProduto(index)) = app.form {
+        if index < app.data.produtos.len() {
+            saida_produto_form(app, ui, index);
+            return;
+        }
+        app.form = None;
+    }
     if let Some(Form::NovoProduto) = app.form {
         produto_form(app, ui, None);
         produto_catalogo_compacto(app, ui);
@@ -749,29 +891,87 @@ fn produtos(app: &mut App, ui: &mut Ui) {
     });
     let produtos = app.data.produtos.clone();
     let busca = app.search.to_lowercase();
-    ui.add_space(16.0);
-    egui::Frame::group(ui.style()).show(ui, |ui| {
+    let quantidade_encontrada = produtos
+        .iter()
+        .filter(|produto| {
+            format!(
+                "{} {} {} {}",
+                produto.codigo, produto.descricao, produto.fabricante, produto.codigo_barras
+            )
+            .to_lowercase()
+            .contains(&busca)
+        })
+        .count();
+    let estoque_total: f64 = produtos.iter().map(|produto| produto.estoque).sum();
+    let estoque_baixo = produtos
+        .iter()
+        .filter(|produto| !produto.inativo && produto.estoque <= produto.estoque_minimo)
+        .count();
+
+    ui.add_space(14.0);
+    ui.columns(3, |columns| {
+        metric_card(
+            &mut columns[0],
+            "Produtos cadastrados",
+            produtos.len().to_string(),
+            "No catálogo",
+            accent(),
+        );
+        metric_card(
+            &mut columns[1],
+            "Unidades em estoque",
+            f2s(estoque_total),
+            "Saldo total",
+            Color32::from_rgb(0x00, 0xb8, 0x96),
+        );
+        metric_card(
+            &mut columns[2],
+            "Estoque baixo",
+            estoque_baixo.to_string(),
+            "Requer atenção",
+            Color32::from_rgb(0xff, 0x9f, 0x43),
+        );
+    });
+
+    ui.add_space(14.0);
+    card(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Pesquisa rápida").strong());
+            ui.vertical(|ui| {
+                ui.label(RichText::new("Catálogo").size(16.0).strong());
+                ui.label(
+                    RichText::new("Pesquise, consulte o saldo ou registre uma saída.")
+                        .size(11.0)
+                        .color(Color32::from_rgb(107, 114, 128)),
+                );
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(
+                    RichText::new(format!(
+                        "{quantidade_encontrada} de {} produtos",
+                        produtos.len()
+                    ))
+                    .color(Color32::from_rgb(107, 114, 128)),
+                );
+            });
+        });
+        ui.add_space(10.0);
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("⌕").size(18.0).color(accent()));
             let response = ui.add(
                 egui::TextEdit::singleline(&mut app.search)
-                    .hint_text("Descrição, código ou fabricante")
-                    .desired_width(360.0),
+                    .hint_text("Buscar por descrição, código, fabricante ou código de barras")
+                    .desired_width(ui.available_width().max(180.0)),
             );
             if app.search_focus {
                 response.request_focus();
                 app.search_focus = false;
             }
-            ui.label(
-                RichText::new(format!("{} itens", app.data.produtos.len()))
-                    .color(Color32::from_rgb(103, 116, 132)),
-            );
         });
-        ui.add_space(10.0);
+        ui.add_space(12.0);
         ScrollArea::vertical().show(ui, |ui| {
             egui::Grid::new("grid_produtos")
                 .striped(true)
-                .min_col_width(66.0)
+                .min_col_width(48.0)
                 .show(ui, |ui| {
                     headers(
                         ui,
@@ -782,7 +982,7 @@ fn produtos(app: &mut App, ui: &mut Ui) {
                             "Grupo",
                             "Estoque",
                             "Preço",
-                            "",
+                            "Ações",
                         ],
                     );
                     for (i, p) in produtos.iter().enumerate() {
@@ -797,16 +997,160 @@ fn produtos(app: &mut App, ui: &mut Ui) {
                         ui.label(&p.descricao);
                         ui.label(&p.unidade);
                         ui.label(&p.grupo);
-                        ui.label(f2s(p.estoque));
+                        ui.colored_label(
+                            if p.estoque <= p.estoque_minimo {
+                                Color32::from_rgb(0xff, 0x9f, 0x43)
+                            } else {
+                                Color32::from_rgb(32, 36, 43)
+                            },
+                            f2s(p.estoque),
+                        );
                         ui.label(format!("R$ {}", f2s(p.preco)));
-                        if ui.small_button("Abrir").clicked() {
-                            abrir_produto(app, i);
-                        }
+                        ui.horizontal(|ui| {
+                            if ui.small_button("Abrir").clicked() {
+                                abrir_produto(app, i);
+                            }
+                            if ui
+                                .add_enabled(p.estoque > 0.0, egui::Button::new("Dar saída"))
+                                .clicked()
+                            {
+                                app.form = Some(Form::SaidaProduto(i));
+                                app.stock_exit_error = None;
+                            }
+                        });
+                        ui.end_row();
+                    }
+                    if quantidade_encontrada == 0 {
+                        ui.label("Nenhum produto encontrado. Ajuste a busca ou cadastre um item.");
                         ui.end_row();
                     }
                 });
         });
     });
+}
+
+fn saida_produto_form(app: &mut App, ui: &mut Ui, index: usize) {
+    let form = Form::SaidaProduto(index);
+    let produto = &app.data.produtos[index];
+    let nome = produto.descricao.clone();
+    let codigo = produto.codigo.clone();
+    let unidade = produto.unidade.clone();
+    let estoque = produto.estoque;
+    let initial = StockExitDraft {
+        quantidade: 1.0_f64.min(estoque.max(0.0)),
+        observacao: String::new(),
+    };
+    let mut draft = match app.take_form_draft(form, FormDraft::SaidaEstoque(initial)) {
+        FormDraft::SaidaEstoque(draft) => draft,
+        _ => unreachable!(),
+    };
+
+    ui.horizontal(|ui| {
+        ui.vertical(|ui| {
+            ui.heading("Registrar saída de estoque");
+            ui.label(
+                RichText::new("Informe a quantidade que está saindo do estoque.")
+                    .color(Color32::from_rgb(107, 114, 128)),
+            );
+        });
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.button("← Voltar ao catálogo").clicked() {
+                app.form = None;
+                app.stock_exit_error = None;
+                app.form_drafts.remove(&form);
+            }
+        });
+    });
+    ui.add_space(12.0);
+    card(ui, |ui| {
+        ui.label(RichText::new("Produto selecionado").size(15.0).strong());
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                ui.label(RichText::new(&nome).size(18.0).strong());
+                ui.label(
+                    RichText::new(format!("Código {codigo} · Unidade {unidade}"))
+                        .color(Color32::from_rgb(107, 114, 128)),
+                );
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.vertical(|ui| {
+                    ui.label(
+                        RichText::new("SALDO DISPONÍVEL")
+                            .size(10.0)
+                            .strong()
+                            .color(Color32::from_rgb(107, 114, 128)),
+                    );
+                    ui.label(RichText::new(f2s(estoque)).size(22.0).strong());
+                });
+            });
+        });
+        ui.add_space(14.0);
+        ui.columns(2, |columns| {
+            columns[0].vertical(|ui| {
+                ui.label(RichText::new("Quantidade de saída").strong());
+                ui.add(
+                    egui::DragValue::new(&mut draft.quantidade)
+                        .range(0.0..=estoque.max(0.0))
+                        .speed(0.25)
+                        .max_decimals(3),
+                );
+            });
+            columns[1].vertical(|ui| {
+                ui.label(RichText::new("Observação (opcional)").strong());
+                ui.add(
+                    egui::TextEdit::singleline(&mut draft.observacao)
+                        .desired_width(ui.available_width())
+                        .hint_text("Ex.: aplicação em ordem de serviço"),
+                );
+            });
+        });
+        let quantidade_valida =
+            draft.quantidade.is_finite() && draft.quantidade > 0.0 && draft.quantidade <= estoque;
+        if !quantidade_valida {
+            ui.colored_label(
+                Color32::from_rgb(180, 35, 24),
+                "Informe uma quantidade maior que zero e dentro do saldo disponível.",
+            );
+        }
+        if let Some(error) = &app.stock_exit_error {
+            ui.colored_label(Color32::from_rgb(180, 35, 24), error);
+        }
+        ui.add_space(12.0);
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(
+                    quantidade_valida,
+                    egui::Button::new(RichText::new("Registrar saída").strong())
+                        .fill(accent())
+                        .min_size(egui::vec2(150.0, 38.0)),
+                )
+                .clicked()
+            {
+                match app.data.registrar_saida_estoque(
+                    index,
+                    draft.quantidade,
+                    draft.observacao.clone(),
+                    today(),
+                ) {
+                    Ok(()) => {
+                        app.form = None;
+                        app.form_drafts.remove(&form);
+                        app.stock_exit_error = None;
+                    }
+                    Err(error) => app.stock_exit_error = Some(error.into()),
+                }
+            }
+            if ui.button("Cancelar").clicked() {
+                app.form = None;
+                app.form_drafts.remove(&form);
+                app.stock_exit_error = None;
+            }
+        });
+    });
+    if app.form == Some(form) {
+        app.keep_form_draft(form, FormDraft::SaidaEstoque(draft));
+    }
 }
 
 fn abrir_produto(app: &mut App, index: usize) {
@@ -920,7 +1264,7 @@ fn produto_form(app: &mut App, ui: &mut Ui, i: Option<usize>) {
     let mut save = false;
     let mut cancel = false;
     let mut delete = false;
-    egui::Frame::group(ui.style()).show(ui, |ui| {
+    card(ui, |ui| {
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.heading(if i.is_some() {

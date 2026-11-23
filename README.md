@@ -64,3 +64,11 @@ cargo build --release
 ```bash
 cargo run --release
 ```
+
+## Interface e estoque
+
+A interface usa navegação lateral, cartões de resumo e superfícies claras com azul
+para ações principais. Em **Produtos**, pesquise por descrição, código, fabricante
+ou código de barras e use **Dar saída** no item para registrar a quantidade e uma
+observação opcional. O estoque é atualizado e a movimentação fica disponível no
+dashboard; registros são preservados no banco SQLite e nos backups portáteis.

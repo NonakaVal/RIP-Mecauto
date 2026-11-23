@@ -134,6 +134,12 @@ impl Storage {
         )?;
         save_collection(
             &transaction,
+            "movimentos_estoque",
+            &data.movimentos_estoque,
+            |record| record.id.clone(),
+        )?;
+        save_collection(
+            &transaction,
             "profissionais",
             &data.profissionais,
             |record| record.id.clone(),
@@ -291,6 +297,7 @@ impl Storage {
                 "ordens",
                 "caixas",
                 "movimentos",
+                "movimentos_estoque",
                 "profissionais",
                 "fornecedors",
                 "fornecedores",
@@ -420,6 +427,7 @@ fn load_data(connection: &Connection) -> rusqlite::Result<MecAutoData> {
         ordens: load_collection(connection, "ordens_servico")?,
         caixas: load_collection(connection, "caixas")?,
         movimentos: load_collection(connection, "movimentos_caixa")?,
+        movimentos_estoque: load_collection(connection, "movimentos_estoque")?,
         profissionais: load_collection(connection, "profissionais")?,
         fornecedors: load_collection(connection, "fornecedores")?,
         usuarios: load_collection(connection, "usuarios")?,
@@ -488,6 +496,25 @@ mod tests {
             let (_, reopened) = Storage::open_at(database).unwrap();
             assert_eq!(reopened, MecAutoData::seed());
         }
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn stock_exits_survive_database_reopen_and_portable_backup() {
+        let directory = test_directory();
+        fs::create_dir_all(&directory).unwrap();
+        let database = directory.join("mecauto.sqlite3");
+        let backup = directory.join("backup.zip");
+        let (mut storage, mut data) = Storage::open_at(database.clone()).unwrap();
+
+        data.registrar_saida_estoque(0, 1.5, "Uso em serviço".into(), "2026-11-23".into())
+            .unwrap();
+        storage.save(&data).unwrap();
+        storage.export_zip(&data, &backup).unwrap();
+
+        let (_, reopened) = Storage::open_at(database).unwrap();
+        assert_eq!(reopened, data);
+        assert_eq!(Storage::read_zip(&backup).unwrap(), data);
         fs::remove_dir_all(directory).unwrap();
     }
 

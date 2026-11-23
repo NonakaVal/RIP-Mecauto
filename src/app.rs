@@ -71,6 +71,7 @@ pub enum Form {
     CaixaBox(usize),
     NovoMovCaixa,
     MovCaixaEdit(usize),
+    SaidaProduto(usize),
     NovoProfissional,
     Profissional(usize),
     NovoFornecedor,
@@ -87,7 +88,7 @@ pub const APP_NAME: &str = "MecAuto";
 pub const APP_VERSION: &str = "1.0.0.0";
 /// ProductID real do MecAuto original (version-info resource).
 pub const PRODUCT_ID: &str = "com.embarcadero.MecAuto";
-pub const APP_WINDOW_SIZE: [f32; 2] = [1169.0, 815.0];
+pub const APP_WINDOW_SIZE: [f32; 2] = [1440.0, 900.0];
 /// Valores do status da barra inferior observados nos prints do MecAuto original
 /// (estimados; OCR de reference/picture-2.png).
 pub const STATUS_IP: &str = "192.168.0.39";
@@ -118,6 +119,7 @@ pub struct App {
     pub product_drafts: HashMap<Form, crate::data::Produto>,
     pub search_focus: bool,
     pub form_drafts: HashMap<Form, FormDraft>,
+    pub stock_exit_error: Option<String>,
 }
 
 impl App {
@@ -146,6 +148,7 @@ impl App {
             product_drafts: HashMap::new(),
             search_focus: false,
             form_drafts: HashMap::new(),
+            stock_exit_error: None,
         })
     }
 
@@ -217,29 +220,88 @@ impl App {
         self.restore_pending = false;
     }
 
-    fn menu(&mut self, ui: &mut egui::Ui) {
-        egui::Panel::top("mecauto_menu")
-            .exact_size(30.0)
+    fn sidebar(&mut self, ui: &mut egui::Ui) {
+        egui::Frame::new()
+            .fill(Color32::WHITE)
+            .inner_margin(egui::Margin::symmetric(14, 18))
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
+                ui.set_min_width(ui.available_width());
+                ui.vertical(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("M").size(26.0).strong().color(accent()));
+                        ui.label(RichText::new("MecAuto").size(20.0).strong());
+                    });
+                    ui.label(
+                        RichText::new("GESTÃO AUTOMOTIVA")
+                            .size(10.0)
+                            .strong()
+                            .color(Color32::from_rgb(125, 137, 153)),
+                    );
+                    ui.add_space(24.0);
+
+                    let dashboard_selected = self.active.is_none();
+                    let dashboard = egui::Button::new(
+                        RichText::new("▦   Dashboard").size(13.0).strong().color(
+                            if dashboard_selected {
+                                Color32::WHITE
+                            } else {
+                                Color32::from_rgb(54, 65, 81)
+                            },
+                        ),
+                    )
+                    .fill(if dashboard_selected {
+                        accent()
+                    } else {
+                        Color32::TRANSPARENT
+                    })
+                    .stroke(egui::Stroke::NONE)
+                    .min_size(egui::vec2(ui.available_width(), 40.0));
+                    if ui.add(dashboard).clicked() {
+                        self.active = None;
+                        self.form = None;
+                        self.clear_form_draft();
+                    }
+
+                    ui.add_space(18.0);
+                    ui.label(
+                        RichText::new("MENU PRINCIPAL")
+                            .size(10.0)
+                            .strong()
+                            .color(Color32::from_rgb(125, 137, 153)),
+                    );
                     ui.add_space(6.0);
-                    for s in Section::ALL {
-                        let selected = self.active == Some(s);
-                        let mut label = RichText::new(s.title()).size(12.0);
-                        if selected {
-                            label = label.color(Color32::WHITE).strong();
-                        }
-                        let button = egui::Button::new(label).fill(if selected {
+                    for section in Section::ALL {
+                        let selected = self.active == Some(section);
+                        let button = egui::Button::new(
+                            RichText::new(format!("   {}", section.title()))
+                                .size(13.0)
+                                .color(if selected {
+                                    Color32::WHITE
+                                } else {
+                                    Color32::from_rgb(54, 65, 81)
+                                }),
+                        )
+                        .fill(if selected {
                             accent()
                         } else {
                             Color32::TRANSPARENT
-                        });
+                        })
+                        .stroke(egui::Stroke::NONE)
+                        .min_size(egui::vec2(ui.available_width(), 36.0));
                         if ui.add(button).clicked() {
-                            self.active = Some(s);
+                            self.active = Some(section);
                             self.form = None;
                             self.clear_form_draft();
                         }
                     }
+                    ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                        ui.separator();
+                        ui.label(
+                            RichText::new(format!("Versão {}", APP_VERSION))
+                                .size(10.0)
+                                .color(Color32::from_rgb(125, 137, 153)),
+                        );
+                    });
                 });
             });
     }
@@ -353,39 +415,44 @@ impl App {
             ],
         };
 
-        egui::Frame::new()
-            .fill(Color32::from_rgb(247, 249, 252))
-            .stroke(egui::Stroke::new(1.0, Color32::from_rgb(225, 231, 239)))
-            .inner_margin(egui::Margin::symmetric(10, 7))
+        egui::Panel::top("mecauto_module_toolbar")
+            .exact_size(70.0)
             .show(ui, |ui| {
-                egui::ScrollArea::horizontal()
-                    .id_salt("module_toolbar_scroll")
-                    .auto_shrink([false, true])
+                egui::Frame::new()
+                    .fill(Color32::from_rgb(247, 249, 252))
+                    .stroke(egui::Stroke::new(1.0, Color32::from_rgb(225, 231, 239)))
+                    .inner_margin(egui::Margin::symmetric(10, 7))
                     .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            for (icon, label, action) in items {
-                                let button = egui::Button::new(
-                                    RichText::new(format!("{icon}\n{label}")).size(11.0),
-                                )
-                                .min_size(egui::vec2(88.0, 52.0))
-                                .fill(Color32::WHITE);
-                                let response = ui.add_enabled(
-                                    action.is_some(),
-                                    button.stroke(egui::Stroke::new(
-                                        1.0,
-                                        Color32::from_rgb(220, 227, 236),
-                                    )),
-                                );
-                                if response.clicked() {
-                                    if let Some(action) = action {
-                                        self.run_toolbar_action(*action);
+                        egui::ScrollArea::horizontal()
+                            .id_salt("module_toolbar_scroll")
+                            .auto_shrink([false, true])
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    for (icon, label, action) in items {
+                                        let button = egui::Button::new(
+                                            RichText::new(format!("{icon}\n{label}")).size(11.0),
+                                        )
+                                        .min_size(egui::vec2(88.0, 52.0))
+                                        .fill(Color32::WHITE);
+                                        let response = ui.add_enabled(
+                                            action.is_some(),
+                                            button.stroke(egui::Stroke::new(
+                                                1.0,
+                                                Color32::from_rgb(220, 227, 236),
+                                            )),
+                                        );
+                                        if response.clicked() {
+                                            if let Some(action) = action {
+                                                self.run_toolbar_action(*action);
+                                            }
+                                        }
+                                        if action.is_none() {
+                                            response
+                                                .on_hover_text("Disponível em uma próxima etapa");
+                                        }
                                     }
-                                }
-                                if action.is_none() {
-                                    response.on_hover_text("Disponível em uma próxima etapa");
-                                }
-                            }
-                        });
+                                });
+                            });
                     });
             });
     }
@@ -460,17 +527,17 @@ impl App {
     fn update(&mut self, ui: &mut egui::Ui) {
         if !self.themed {
             let mut visuals = egui::Visuals::light();
-            let canvas = Color32::from_rgb(241, 245, 249);
+            let canvas = Color32::from_rgb(244, 246, 250);
             let surface = Color32::WHITE;
-            let border = Color32::from_rgb(207, 218, 228);
-            let text = Color32::from_rgb(31, 41, 55);
-            let muted = Color32::from_rgb(83, 98, 115);
-            let hover = Color32::from_rgb(231, 244, 245);
+            let border = Color32::from_rgb(226, 231, 239);
+            let text = Color32::from_rgb(32, 36, 43);
+            let muted = Color32::from_rgb(107, 114, 128);
+            let hover = Color32::from_rgb(235, 241, 255);
             visuals.panel_fill = canvas;
             visuals.window_fill = Color32::WHITE;
-            visuals.faint_bg_color = Color32::from_rgb(247, 249, 251);
+            visuals.faint_bg_color = Color32::from_rgb(244, 246, 250);
             visuals.extreme_bg_color = surface;
-            visuals.selection.bg_fill = Color32::from_rgb(215, 237, 238);
+            visuals.selection.bg_fill = Color32::from_rgb(225, 235, 255);
             visuals.selection.stroke = egui::Stroke::new(1.0, accent());
             visuals.hyperlink_color = accent();
             visuals.widgets.noninteractive.bg_fill = surface;
@@ -486,34 +553,82 @@ impl App {
             visuals.widgets.active.bg_fill = accent();
             visuals.widgets.active.fg_stroke.color = text;
             visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, accent());
-            visuals.widgets.open.bg_fill = Color32::from_rgb(223, 239, 241);
+            visuals.widgets.open.bg_fill = Color32::from_rgb(235, 241, 255);
             visuals.widgets.open.fg_stroke.color = text;
             visuals.widgets.open.bg_stroke = egui::Stroke::new(1.0, accent());
             visuals.window_stroke = egui::Stroke::new(1.0, border);
+            visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::same(8);
+            visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(8);
+            visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(8);
+            visuals.widgets.active.corner_radius = egui::CornerRadius::same(8);
+            visuals.widgets.open.corner_radius = egui::CornerRadius::same(8);
+            visuals.striped = true;
             visuals.warn_fg_color = Color32::from_rgb(154, 83, 12);
             visuals.error_fg_color = Color32::from_rgb(180, 35, 24);
             visuals.weak_text_color = Some(muted);
             ui.ctx().set_visuals(visuals);
+            let mut style = (**ui.style()).clone();
+            style.spacing.item_spacing = egui::vec2(10.0, 9.0);
+            style.spacing.button_padding = egui::vec2(12.0, 8.0);
+            style.spacing.interact_size.y = 34.0;
+            ui.set_style(style);
             self.themed = true;
         }
-        self.menu(ui);
+        egui::Panel::top("mecauto_header")
+            .exact_size(52.0)
+            .show(ui, |ui| {
+                egui::Frame::new()
+                    .fill(Color32::WHITE)
+                    .inner_margin(egui::Margin::symmetric(20, 10))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(
+                                    self.active.map_or("Dashboard", |section| section.title()),
+                                )
+                                .size(15.0)
+                                .strong(),
+                            );
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.label(
+                                        RichText::new("●  Operação local")
+                                            .size(11.0)
+                                            .color(Color32::from_rgb(0x00, 0xb8, 0x96)),
+                                    );
+                                },
+                            );
+                        });
+                    });
+            });
         self.module_toolbar(ui);
         self.status_bar(ui);
-        egui::CentralPanel::default().show(ui, |ui| {
-            if let Some(error) = self.storage_error.clone() {
-                ui.horizontal(|ui| {
-                    ui.colored_label(
-                        Color32::from_rgb(170, 52, 48),
-                        format!("Alterações ainda não salvas no banco: {error}"),
-                    );
-                    if ui.button("Tentar salvar novamente").clicked() {
-                        self.last_save_attempt = None;
-                        self.storage_error = None;
-                    }
-                });
-            }
-            screens::show(self, ui);
-        });
+        egui::Panel::left("mecauto_sidebar")
+            .exact_size(220.0)
+            .show(ui, |ui| self.sidebar(ui));
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(Color32::from_rgb(244, 246, 250)))
+            .show(ui, |ui| {
+                egui::Frame::new()
+                    .fill(Color32::from_rgb(244, 246, 250))
+                    .inner_margin(egui::Margin::same(18))
+                    .show(ui, |ui| {
+                        if let Some(error) = self.storage_error.clone() {
+                            ui.horizontal(|ui| {
+                                ui.colored_label(
+                                    Color32::from_rgb(170, 52, 48),
+                                    format!("Alterações ainda não salvas no banco: {error}"),
+                                );
+                                if ui.button("Tentar salvar novamente").clicked() {
+                                    self.last_save_attempt = None;
+                                    self.storage_error = None;
+                                }
+                            });
+                        }
+                        screens::show(self, ui);
+                    });
+            });
         self.persist_if_needed();
     }
 
@@ -564,10 +679,17 @@ pub enum FormDraft {
     ContaBancaria(crate::data::ContaBancaria),
     EventoFinanceiro(crate::data::EventoFin),
     Usuario(crate::data::Usuario),
+    SaidaEstoque(StockExitDraft),
+}
+
+#[derive(Clone, Debug)]
+pub struct StockExitDraft {
+    pub quantidade: f64,
+    pub observacao: String,
 }
 
 pub fn accent() -> Color32 {
-    Color32::from_rgb(0x0b, 0x6b, 0x75)
+    Color32::from_rgb(0x47, 0x7d, 0xff)
 }
 
 pub fn f2s<T: Into<f64> + std::fmt::Display>(v: T) -> String {

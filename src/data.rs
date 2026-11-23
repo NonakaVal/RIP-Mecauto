@@ -139,6 +139,19 @@ pub struct MovCaixa {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+pub struct MovEstoque {
+    pub id: String,
+    pub produto_id: String,
+    pub produto_codigo: String,
+    pub produto_descricao: String,
+    pub data: String,
+    pub tipo: String,
+    pub quantidade: f64,
+    pub observacao: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Profissional {
     pub id: String,
     pub nome: String,
@@ -199,6 +212,7 @@ pub struct MecAutoData {
     pub ordens: Vec<OS>,
     pub caixas: Vec<BoxCaixa>,
     pub movimentos: Vec<MovCaixa>,
+    pub movimentos_estoque: Vec<MovEstoque>,
     pub profissionais: Vec<Profissional>,
     #[serde(alias = "fornecedores")]
     pub fornecedors: Vec<Fornecedor>,
@@ -221,6 +235,52 @@ fn item(descricao: &str, unidade: &str, qtd: f64, valor: f32) -> Item {
 }
 
 impl MecAutoData {
+    pub fn registrar_saida_estoque(
+        &mut self,
+        produto_index: usize,
+        quantidade: f64,
+        observacao: String,
+        data: String,
+    ) -> Result<(), &'static str> {
+        if !quantidade.is_finite() || quantidade <= 0.0 {
+            return Err("Informe uma quantidade maior que zero.");
+        }
+        let produto = self
+            .produtos
+            .get(produto_index)
+            .ok_or("O produto selecionado não existe mais.")?;
+        if !produto.estoque.is_finite() || quantidade > produto.estoque {
+            return Err("A quantidade não pode ser maior que o estoque disponível.");
+        }
+
+        let next_id = self
+            .movimentos_estoque
+            .iter()
+            .filter_map(|movimento| {
+                movimento
+                    .id
+                    .strip_prefix("ME-")
+                    .and_then(|suffix| suffix.parse::<u64>().ok())
+            })
+            .max()
+            .unwrap_or(0)
+            + 1;
+        let movement = MovEstoque {
+            id: format!("ME-{next_id:03}"),
+            produto_id: produto.id.clone(),
+            produto_codigo: produto.codigo.clone(),
+            produto_descricao: produto.descricao.clone(),
+            data,
+            tipo: "Saída".into(),
+            quantidade,
+            observacao: observacao.trim().to_owned(),
+        };
+
+        self.produtos[produto_index].estoque -= quantidade;
+        self.movimentos_estoque.push(movement);
+        Ok(())
+    }
+
     pub fn seed() -> Self {
         let mut d = MecAutoData::default();
 
@@ -558,5 +618,61 @@ impl MecAutoData {
         ];
 
         d
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stock_exit_rejects_invalid_quantities_without_changing_stock() {
+        let mut data = MecAutoData::seed();
+        let original = data.clone();
+
+        assert!(data
+            .registrar_saida_estoque(0, 0.0, String::new(), "2026-11-23".into())
+            .is_err());
+        assert!(data
+            .registrar_saida_estoque(0, f64::NAN, String::new(), "2026-11-23".into())
+            .is_err());
+        assert!(data
+            .registrar_saida_estoque(
+                0,
+                data.produtos[0].estoque + 1.0,
+                String::new(),
+                "2026-11-23".into()
+            )
+            .is_err());
+        assert_eq!(data, original);
+    }
+
+    #[test]
+    fn stock_exit_decrements_quantity_and_records_auditable_movement() {
+        let mut data = MecAutoData::seed();
+        let original_stock = data.produtos[0].estoque;
+
+        data.registrar_saida_estoque(
+            0,
+            2.0,
+            "  Uso em ordem de serviço  ".into(),
+            "2026-11-23".into(),
+        )
+        .unwrap();
+
+        assert_eq!(data.produtos[0].estoque, original_stock - 2.0);
+        assert_eq!(
+            data.movimentos_estoque,
+            vec![MovEstoque {
+                id: "ME-001".into(),
+                produto_id: data.produtos[0].id.clone(),
+                produto_codigo: data.produtos[0].codigo.clone(),
+                produto_descricao: data.produtos[0].descricao.clone(),
+                data: "2026-11-23".into(),
+                tipo: "Saída".into(),
+                quantidade: 2.0,
+                observacao: "Uso em ordem de serviço".into(),
+            }]
+        );
     }
 }
