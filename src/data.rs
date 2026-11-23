@@ -65,6 +65,7 @@ pub struct Produto {
     pub estoque_maximo: f64,
     pub inativo: bool,
     pub foto: bool,
+    pub imagem: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -565,6 +566,14 @@ mod tests {
             ..Default::default()
         });
         data
+    }
+
+    #[test]
+    fn older_products_without_image_paths_keep_the_default() {
+        let product: Produto = serde_json::from_str(r#"{"codigo":"123","foto":true}"#).unwrap();
+
+        assert!(product.foto);
+        assert!(product.imagem.is_empty());
     }
 
     #[test]

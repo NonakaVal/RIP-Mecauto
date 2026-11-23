@@ -134,6 +134,8 @@ pub struct App {
     pub prod_tab: usize,
     pub product_draft: Option<crate::data::Produto>,
     pub product_drafts: HashMap<Form, crate::data::Produto>,
+    pub product_image_texture: Option<(String, egui::TextureHandle)>,
+    pub product_image_error: Option<String>,
     pub search_focus: bool,
     pub form_drafts: HashMap<Form, FormDraft>,
     pub stock_exit_error: Option<String>,
@@ -163,6 +165,8 @@ impl App {
             prod_tab: 0,
             product_draft: None,
             product_drafts: HashMap::new(),
+            product_image_texture: None,
+            product_image_error: None,
             search_focus: false,
             form_drafts: HashMap::new(),
             stock_exit_error: None,
@@ -701,25 +705,34 @@ impl App {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(Color32::from_rgb(238, 242, 247)))
             .show(ui, |ui| {
-                egui::Frame::new()
-                    .fill(Color32::from_rgb(238, 242, 247))
-                    .inner_margin(egui::Margin::same(18))
-                    .show(ui, |ui| {
-                        ui.set_min_height(ui.available_height());
-                        if let Some(error) = self.storage_error.clone() {
-                            ui.horizontal(|ui| {
-                                ui.colored_label(
-                                    Color32::from_rgb(170, 52, 48),
-                                    format!("Alterações ainda não salvas no banco: {error}"),
-                                );
-                                if ui.button("Tentar salvar novamente").clicked() {
-                                    self.last_save_attempt = None;
-                                    self.storage_error = None;
+                let central_rect = ui.max_rect();
+                ui.scope_builder(
+                    egui::UiBuilder::new()
+                        .max_rect(central_rect)
+                        .layout(egui::Layout::top_down(egui::Align::Min)),
+                    |ui| {
+                        egui::Frame::new()
+                            .fill(Color32::from_rgb(238, 242, 247))
+                            .inner_margin(egui::Margin::same(10))
+                            .show(ui, |ui| {
+                                if let Some(error) = self.storage_error.clone() {
+                                    ui.horizontal(|ui| {
+                                        ui.colored_label(
+                                            Color32::from_rgb(170, 52, 48),
+                                            format!(
+                                                "Alterações ainda não salvas no banco: {error}"
+                                            ),
+                                        );
+                                        if ui.button("Tentar salvar novamente").clicked() {
+                                            self.last_save_attempt = None;
+                                            self.storage_error = None;
+                                        }
+                                    });
                                 }
+                                screens::show(self, ui);
                             });
-                        }
-                        screens::show(self, ui);
-                    });
+                    },
+                );
             });
         self.persist_if_needed();
     }

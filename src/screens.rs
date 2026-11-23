@@ -1440,7 +1440,9 @@ fn produto_catalogo_compacto(app: &mut App, ui: &mut Ui) {
             {
                 header.add_sized(
                     egui::vec2(width, header_height),
-                    egui::Label::new(RichText::new(title).strong().color(accent())).truncate(),
+                    egui::Label::new(RichText::new(title).strong().color(accent()))
+                        .halign(egui::Align::Min)
+                        .truncate(),
                 );
             }
 
@@ -1485,7 +1487,7 @@ fn produto_catalogo_compacto(app: &mut App, ui: &mut Ui) {
                         {
                             row.add_sized(
                                 egui::vec2(width, row_height),
-                                egui::Label::new(value).truncate(),
+                                egui::Label::new(value).halign(egui::Align::Min).truncate(),
                             );
                         }
                         let response = ui.interact(
@@ -1604,6 +1606,9 @@ fn produto_form(app: &mut App, ui: &mut Ui, i: Option<usize>) {
                 &mut app.prod_tab,
             );
 
+            let selected_tab = app.prod_tab;
+            let image_texture = &mut app.product_image_texture;
+            let image_error = &mut app.product_image_error;
             let p = app
                 .product_draft
                 .as_mut()
@@ -1614,8 +1619,8 @@ fn produto_form(app: &mut App, ui: &mut Ui, i: Option<usize>) {
                     (ui.available_height() - 48.0).max(0.0),
                 ),
                 egui::Layout::top_down(egui::Align::Min),
-                |ui| match app.prod_tab {
-                    0 => produto_aba_geral(ui, p, focus_name),
+                |ui| match selected_tab {
+                    0 => produto_aba_geral(ui, p, focus_name, image_texture, image_error),
                     1 => produto_aba_variacoes(ui, p),
                     2 => produto_aba_fiscal(ui, p),
                     3 => produto_aba_unidades(ui, p),
@@ -1711,7 +1716,13 @@ fn produto_form(app: &mut App, ui: &mut Ui, i: Option<usize>) {
     }
 }
 
-fn produto_aba_geral(ui: &mut Ui, p: &mut Produto, focus_name: bool) {
+fn produto_aba_geral(
+    ui: &mut Ui,
+    p: &mut Produto,
+    focus_name: bool,
+    image_texture: &mut Option<(String, egui::TextureHandle)>,
+    image_error: &mut Option<String>,
+) {
     ui.columns(4, |columns| {
         columns[0].vertical(|ui| {
             ui.label(RichText::new("Nome do item *").strong());
@@ -1743,23 +1754,129 @@ fn produto_aba_geral(ui: &mut Ui, p: &mut Produto, focus_name: bool) {
             produto_campo_compacto(ui, "Destino", &mut p.destino, "Local de destino");
         });
         columns[3].vertical(|ui| {
+            produto_imagem(ui, &mut p.imagem, &mut p.foto, image_texture, image_error);
             produto_campo_compacto(ui, "Montadora", &mut p.montadora, "Montadora");
             produto_campo_compacto(ui, "Loja", &mut p.codigo_loja, "Código na loja");
             produto_campo_compacto(ui, "Fabricante", &mut p.codigo_fabricante, "Referência");
             produto_campo_compacto(ui, "Código de barras", &mut p.codigo_barras, "EAN / GTIN");
             produto_campo_compacto(ui, "Sistema", &mut p.codigo_sistema, "Código externo");
-            ui.label(
-                RichText::new(if p.foto {
-                    "Imagem vinculada"
-                } else {
-                    "Sem imagem vinculada"
-                })
-                .size(11.0)
-                .color(Color32::from_rgb(83, 98, 115)),
-            );
         });
     });
     ui.checkbox(&mut p.inativo, "Produto inativo");
+}
+
+fn produto_imagem(
+    ui: &mut Ui,
+    image_path: &mut String,
+    has_legacy_image: &mut bool,
+    texture: &mut Option<(String, egui::TextureHandle)>,
+    error: &mut Option<String>,
+) {
+    const IMAGE_SIZE: f32 = 104.0;
+
+    if !image_path.is_empty()
+        && texture
+            .as_ref()
+            .is_none_or(|(loaded_path, _)| loaded_path != image_path)
+    {
+        match image::open(image_path.as_str()) {
+            Ok(image) => {
+                let rgba = image.to_rgba8();
+                let size = [rgba.width() as usize, rgba.height() as usize];
+                let color_image = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
+                *texture = Some((
+                    image_path.clone(),
+                    ui.ctx().load_texture(
+                        "produto_imagem",
+                        color_image,
+                        egui::TextureOptions::LINEAR,
+                    ),
+                ));
+                *error = None;
+            }
+            Err(load_error) => {
+                *texture = None;
+                *error = Some(format!("Não foi possível carregar a imagem: {load_error}"));
+            }
+        }
+    }
+
+    ui.label(RichText::new("Imagem do item").strong().size(11.0));
+    let response = if let Some((loaded_path, image_texture)) = texture
+        .as_ref()
+        .filter(|(loaded_path, _)| loaded_path == image_path)
+    {
+        ui.add(
+            egui::Image::new(image_texture)
+                .fit_to_exact_size(egui::vec2(IMAGE_SIZE, IMAGE_SIZE))
+                .sense(egui::Sense::click()),
+        )
+        .on_hover_text(loaded_path)
+    } else {
+        ui.add_sized(
+            [IMAGE_SIZE, IMAGE_SIZE],
+            egui::Button::new(
+                RichText::new("＋\nAdicionar imagem")
+                    .size(11.0)
+                    .color(accent()),
+            )
+            .fill(Color32::from_rgb(242, 246, 251))
+            .stroke(egui::Stroke::new(1.0, Color32::from_rgb(184, 198, 216))),
+        )
+    };
+
+    if !image_path.is_empty() {
+        ui.label(
+            RichText::new(
+                std::path::Path::new(image_path.as_str())
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("Imagem selecionada"),
+            )
+            .size(10.0)
+            .color(Color32::from_rgb(83, 98, 115)),
+        );
+    } else if *has_legacy_image {
+        ui.label(
+            RichText::new("Imagem já vinculada")
+                .size(10.0)
+                .color(Color32::from_rgb(83, 98, 115)),
+        );
+    }
+
+    if let Some(message) = error.as_deref() {
+        ui.colored_label(Color32::from_rgb(180, 35, 24), message);
+    }
+
+    if response.clicked() {
+        if let Some(path) = rfd::FileDialog::new()
+            .add_filter("Imagens", &["png", "jpg", "jpeg", "webp", "bmp"])
+            .pick_file()
+        {
+            let selected_path = path.to_string_lossy().into_owned();
+            match image::open(&path) {
+                Ok(image) => {
+                    let rgba = image.to_rgba8();
+                    let size = [rgba.width() as usize, rgba.height() as usize];
+                    let color_image = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
+                    *texture = Some((
+                        selected_path.clone(),
+                        ui.ctx().load_texture(
+                            "produto_imagem",
+                            color_image,
+                            egui::TextureOptions::LINEAR,
+                        ),
+                    ));
+                    *image_path = selected_path;
+                    *has_legacy_image = true;
+                    *error = None;
+                }
+                Err(load_error) => {
+                    *error = Some(format!("Não foi possível carregar a imagem: {load_error}"));
+                }
+            }
+        }
+    }
 }
 
 fn produto_aba_variacoes(ui: &mut Ui, p: &mut Produto) {
